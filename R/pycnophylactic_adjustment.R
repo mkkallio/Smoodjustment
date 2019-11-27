@@ -70,7 +70,7 @@ pycnophylactic_adjustment <- function(r1, r2,
     ## TEST WHETHER POSSIBLE
     diff_test <- zonal_diff[,4] / zonal_diff[,3]
     diff_test[is.infinite(diff_test) | is.nan(diff_test)] <- 0 
-    zonal_thresholds <- data.table(zone = zonal_diff[,1], 
+    zonal_thresholds <- data.table::data.table(zone = zonal_diff[,1], 
                                    #threshold = abs(diff_test),
                                    threshold = adjust_threshold,
                                    key="zone")
