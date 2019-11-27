@@ -1,0 +1,9 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+
+devdata
+dev2.R
+dev3.R
+devscript.R
+PP_adjustment*
+simplistic_nodata_padding.r
