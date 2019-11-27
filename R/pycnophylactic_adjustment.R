@@ -242,11 +242,3 @@ pycnophylactic_adjustment <- function(r1, r2,
 } 
 
 
-# 
-# zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
-# zm_runoff_smooth <- raster::zonal(sm_out*area(w_rs), zones1)
-# all.equal(zm_runoff, zm_runoff_smooth)
-# cbind(zm_runoff, zm_runoff_smooth)
-# any(values(temp) < 0, na.rm=TRUE)
-# t <- values(temp)
-# table(t < 0)
