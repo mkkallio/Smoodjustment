@@ -237,8 +237,8 @@ pycnophylactic_adjustment <- function(r1, r2,
     if(intensive) rzd <- rzd/raster::area(rzd)
     sm_out <- r2 - rzd
     if(return_error) {
-        out <- raster::stack(sm_out, r2, rzd)
-        names(out) <- c("Adjusted", "Original", "Error")
+        out <- raster::stack(sm_out, r2, r1, rzd)
+        names(out) <- c("Adjusted", "Smoothed", "Unsmoothed", "Error")
         return(out)
     } else {
         return(sm_out)

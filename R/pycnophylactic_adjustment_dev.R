@@ -79,12 +79,6 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                                   smooth_r2 = smooth_r2,
                                   key = c("pixel", "zone", "smooth_r2"))
     
-    adj[, error := ifelse(is.na(orig_r1),
-                          smooth_r2,
-                          smooth_r2-orig_r1)]
-    adj[, error_ratio := error/sum(error, na.rm=TRUE), by=zone]
-    
-    
     
     ###########################
     # COMPUTE ZONAL DIFFERENCES BETWEEN r1 AND r2
@@ -98,17 +92,27 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     zonal_diff <- data.table::data.table(zone = r_zonal_mean[,1],
                                          r1_mean = r_zonal_mean[,2],
                                          sm_mean = rsm_zonal_mean[,2])
+    
     zonal_diff[, orig_diff := sm_mean-r1_mean]
     zonal_diff[, ratio := orig_diff/sm_mean]
     zonal_diff[is.na(ratio) | is.nan(ratio) | is.infinite(ratio), ratio := 1]
     #threshold <-  abs(zonal_diff$ratio)
-    zonal_diff[, threshold := abs(ratio)*2 ]
+    zonal_diff[, threshold := abs(ratio)*1.5 ]
     
     ##################
     # prepare pycnophylactic interpolation
     adj <- adj[zonal_diff, on=.(zone), ':='(orig_diff = i.orig_diff,
-                                         threshold = i.threshold)]
-    adj[, rzd := error_ratio*sum(orig_diff, na.rm=TRUE), by=zone]
+                                         threshold = i.threshold,
+                                         r_ratio = i.ratio)]
+    
+    adj[, error := ifelse(is.na(orig_r1),
+                          smooth_r2,
+                          smooth_r2-orig_r1)]
+    adj[, error_ratio := error/sum(error, na.rm=TRUE), by=zone]
+    adj[, error_ratio2 := abs(error)/sum(abs(error), na.rm=TRUE), by=zone]
+    
+    adj[, rzd2 := error_ratio*sum(orig_diff, na.rm=TRUE), by=zone]
+    adj[, rzd := error_ratio2*sum(orig_diff, na.rm=TRUE), by=zone]
     
     
     
@@ -156,7 +160,7 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     tst[, ':='(max_ratio = round(err/max_err,2),
                max_test = round(abs(tst$err),5) > round(tst$max_err,5))]
     test <- any(tst$max_test[-1])
-    #test <- FALSE
+    test <- FALSE
     # if(test) stop("cannot reallocate error with current threshold. Please increase.")
     if(test) {
         warning(paste0("WARNING: cannot reallocate error with current ", 
@@ -171,7 +175,8 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     if(verbose) message("Pycnophylactic interpolation of errors..")
     pb <- utils::txtProgressBar(min = 0, max = nmax, style=3) 
     n <- 1
-    while(n <= nmax) {
+    keep_iter <- TRUE
+    while(keep_iter & n <= nmax ) {
     #for(i in 1:n) {
         
         # add boundary condition
@@ -214,42 +219,55 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                 
                 max_err <- adj[zone == z, max_err]
                 new_err <- adj[zone == z, new_err]
-                fixed_err <- rep(NA, length(new_err))
+                value <- adj[zone == z, smooth_r2]
+                fixed_err <- new_err
                 shares <- max_err / sum(abs(max_err))
-                share_left <- sum(shares)
+                #share_left <- sum(shares)
                 shares_visited <- 0
                 total_err <- 0
-                
-                for(j in seq_along(new_err)) {
-                    share_of_err <- shares[j] / (1-shares_visited)
-                    sherr <- total_err*share_of_err
-                    pos <- new_err[j] >= 0
-                    test <- abs(new_err[j]+sherr) > abs(max_err[j])
-                    if(is.na(test)) next
-                    if(test) {
-                        
-                        if(pos) {
-                            dist_err = new_err[j] - max_err[j];
-                            fix_err = max_err[j];
-                        }  else {
-                            dist_err = new_err[j] + max_err[j];
-                            fix_err = -max_err[j];
+                keep <- TRUE
+                order <- rev(seq_along(new_err))
+                nrev <- 0
+                while(keep) {
+                    nrev <- nrev + 1
+                    order <- rev(order)
+                    for(j in order) {
+                        share_of_err <- shares[j] / (1-shares_visited)
+                        sherr <- total_err*share_of_err
+                        pos <- fixed_err[j] >= 0
+                        test <- abs(fixed_err[j]+sherr) > abs(max_err[j])
+                        test
+                        if(is.na(test)) next
+                        if(test) {
+                            if(pos) {
+                                dist_err = fixed_err[j] - max_err[j];
+                                fix_err = max_err[j];
+                            }  else {
+                                dist_err = fixed_err[j] + max_err[j];
+                                fix_err = -max_err[j];
+                            }
+                            new_val <- value[j] - dist_err
+                            
+                            shares_visited <- shares_visited + shares[j]
+                            total_err <- total_err + dist_err
+                            
+                            fixed_err[j] <- fix_err
+                            
+                        } else {
+                            fixed_err[j] <- fixed_err[j] + sherr
+                            total_err <- total_err - sherr
+                            shares_visited <- shares_visited + shares[j]
                         }
-                        
-                        
-                        shares_visited <- shares_visited + shares[j]
-                        total_err <- total_err + dist_err
-                        
-                        fixed_err[j] <- fix_err
-                        
-                    } else {
-                        fixed_err[j] <- new_err[j] + sherr
-                        total_err <- total_err - sherr
-                        shares_visited <- shares_visited + shares[j]
                     }
+                    if(round(total_err,5) == 0 || nrev == 25) {
+                        keep <- FALSE
+                        break
+                    }
+                    shares_visited <- 0
                 }
                 errvec <- fixed_err
                 adj[zone == z, fixed_err := errvec]
+                #print(z)
             }
             adj <- adj[order(pixel)]
             iterr <- adj$fixed_err
@@ -262,8 +280,10 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
             rat <- round(sum_fix/sum_orig, 15)
             print(paste0("iter ", n, " -- ", n_test, "/", nrow(test), " OK! ",
                          "Ratio estimate vs original is ", rat))
-            if(n_test == nrow(test)) break
+           
         }
+        n <- n+1
+        if(n_test == nrow(test)) break
         rzd_i <- matrix(iterr, nrow=nrow, ncol=ncol,
                         byrow=TRUE)
         if(verbose) utils::setTxtProgressBar(pb, i)
@@ -276,54 +296,68 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     if(intensive) rzd <- rzd/raster::area(rzd)
     sm_out <- r2 - rzd
     if(return_error) {
-        out <- raster::stack(sm_out, r2, rzd)
-        names(out) <- c("Adjusted", "Original", "Error")
+        out <- raster::stack(sm_out, r2, r1, rzd)
+        names(out) <- c("Adjusted", "Smoothed", "Unsmoothed", "Error")
         return(out)
     } else {
         return(sm_out)
     }
 } 
 
-
-
-system.time({
-    test <- pycnophylactic_adjustment_dev(w_rs, wsm_rs, zones1, 
-                                      adjust_threshold = 0.5, n=50, 
-                                      return_error = TRUE, verbose=TRUE)
-})
-
-zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
-zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones1)
-all.equal(zm_runoff, zm_runoff_smooth)
-
-any(values(test[[1]]) < 0, na.rm=TRUE)
-t <- values(test[[1]])
-table(t < 0)
-writeRaster(test, "testnew_50_abs_err.tif")
-
-dt <- as.data.table(zm_runoff)
-dt[, sm_mean := zm_runoff_smooth[,2]]
-dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
-dt[, ratio := sm_mean/mean][]
-#tempdt <- dt
-
-
-system.time({
-    test <- pycnophylactic_adjustment(w_rs, wsm_rs, zones3, 
-                                          adjust_threshold = 1, n=5, 
-                                          return_error = TRUE, verbose=TRUE)
-})
-
-zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
-zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones1)
-all.equal(zm_runoff, zm_runoff_smooth)
-
-any(values(test[[1]]) < 0, na.rm=TRUE)
-t <- values(test[[1]])
-table(t < 0)
-writeRaster(test, "testnew_50_abs_err.tif")
-
-dt <- as.data.table(zm_runoff)
-dt[, sm_mean := zm_runoff_smooth[,2]]
-dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
-dt[, ratio := sm_mean/mean][]
+# 
+# zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
+# zm_runoff_smooth <- raster::zonal(out[[1]]*area(w_rs), zones1)
+# all.equal(zm_runoff, zm_runoff_smooth)
+# 
+# any(values(out[[1]]) < 0, na.rm=TRUE)
+# t <- values(out[[1]])
+# table(t < 0)
+# #writeRaster(test, "testnew_50_abs_err.tif")
+# 
+# dt <- as.data.table(zm_runoff)
+# dt[, sm_mean := zm_runoff_smooth[,2]]
+# dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
+# dt[, ratio := sm_mean/mean][]
+# 
+# 
+# 
+# system.time({
+#     test <- pycnophylactic_adjustment_dev(w_rs, wsm_rs, zones, 
+#                                       adjust_threshold = 0.5, n=5, 
+#                                       return_error = TRUE, verbose=TRUE)
+# })
+# 
+# zm_runoff <- raster::zonal(w_rs*area(w_rs), zones)
+# zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones)
+# all.equal(zm_runoff, zm_runoff_smooth)
+# 
+# any(values(test[[1]]) < 0, na.rm=TRUE)
+# t <- values(test[[1]])
+# table(t < 0)
+# #writeRaster(test, "testnew_50_abs_err.tif")
+# 
+# dt <- as.data.table(zm_runoff)
+# dt[, sm_mean := zm_runoff_smooth[,2]]
+# dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
+# dt[, ratio := sm_mean/mean][]
+# #tempdt <- dt
+# 
+# 
+# system.time({
+#     test <- pycnophylactic_adjustment(w_rs, wsm_rs, vzr, 
+#                                           adjust_threshold = 0.9, n=5, 
+#                                           return_error = TRUE, verbose=TRUE)
+# })
+# 
+# zm_runoff <- raster::zonal(w_rs*area(w_rs), zones)
+# zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones)
+# all.equal(zm_runoff, zm_runoff_smooth)
+# 
+# any(values(test[[1]]) < 0, na.rm=TRUE)
+# t <- values(test[[1]])
+# table(t < 0)
+# 
+# dt <- as.data.table(zm_runoff)
+# dt[, sm_mean := zm_runoff_smooth[,2]]
+# dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
+# dt[, ratio := sm_mean/mean][]
