@@ -134,7 +134,11 @@ pycnophylactic_adjustment <- function(r1, r2,
             test = round(abs(tst$err),5) > round(tst$max_err,5))]
     test <- any(tst$test[-1])
     #test <- FALSE
-    if(test) stop("cannot reallocate error with current threshold. Please increase.")
+    if(test) {
+        warning(paste0("WARNING: cannot reallocate error with current ", 
+                       "threshold. Returning the error table."))
+        return(tst)
+    }
     if(!test && diff_test) warning(paste0("threshold smaller than difference ",
                                           "between r1 and r2. adjustment may ",
                                           "be unstable."))

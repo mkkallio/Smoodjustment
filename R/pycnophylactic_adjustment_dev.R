@@ -61,8 +61,10 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     }
     
     # remove zones-pixels with nodata in r2
-    orig_r1 <- raster::values(r1)*areas
+    orig_r1 <- raster::values(r1) * areas
     smooth_r2 <- raster::values(r2) * areas
+    below_zero <- smooth_r2 <= 0
+    smooth_r2[below_zero] <- 0
     zs <- raster::values(zones)
     z <- !is.na(zs) & is.na(smooth_r2)
     zs[z] <- NA
@@ -75,59 +77,55 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                                   areas = areas,
                                   orig_r1 = orig_r1,
                                   smooth_r2 = smooth_r2,
-                                  #negative = negative,
-                                  #orig_err_mean = raster::values(rzd),
                                   key = c("pixel", "zone", "smooth_r2"))
-    #adj <- zonal_thresholds[adj, on="zone"]
+    
     adj[, error := ifelse(is.na(orig_r1),
                           smooth_r2,
                           smooth_r2-orig_r1)]
-    # adj[, ':='(err_ratio = error/orig_err_mean,
-    #            max_err = abs(smooth_r2 * max_thrs*!negative),
-    #            min_err = -abs(smooth_r2 * min_thrs*!negative))]
-    
-    zonal_diff <- adj[, .(r1_mean = sum(orig_r1, na.rm=TRUE),
-                          r2_mean = sum(smooth_r2, na.rm=TRUE)), 
-                      by=zone]
-    zonal_diff[, diff := r2_mean-r1_mean]
+    adj[, error_ratio := error/sum(error, na.rm=TRUE), by=zone]
     
     
-    # convert to volume?
-    if(intensive) {
+    
+    ###########################
+    # COMPUTE ZONAL DIFFERENCES BETWEEN r1 AND r2
+    if(intensive) {# convert to volume?
         r_zonal_mean <- raster::zonal(r1*raster::area(r1), zones)
         rsm_zonal_mean <- raster::zonal(r2*raster::area(r2), zones)
     } else {
         r_zonal_mean <- raster::zonal(r1, zones)
         rsm_zonal_mean <- raster::zonal(r2, zones)
     }
+    zonal_diff <- data.table::data.table(zone = r_zonal_mean[,1],
+                                         r1_mean = r_zonal_mean[,2],
+                                         sm_mean = rsm_zonal_mean[,2])
+    zonal_diff[, orig_diff := sm_mean-r1_mean]
+    zonal_diff[, ratio := orig_diff/sm_mean]
+    zonal_diff[is.na(ratio) | is.nan(ratio) | is.infinite(ratio), ratio := 1]
+    #threshold <-  abs(zonal_diff$ratio)
+    zonal_diff[, threshold := abs(ratio)*2 ]
     
-    zonal_diff <- cbind(r_zonal_mean, sm_mean = rsm_zonal_mean[,2])
-    zonal_diff <- cbind(zonal_diff, diff = zonal_diff[,3]-zonal_diff[,2])
+    ##################
+    # prepare pycnophylactic interpolation
+    adj <- adj[zonal_diff, on=.(zone), ':='(orig_diff = i.orig_diff,
+                                         threshold = i.threshold)]
+    adj[, rzd := error_ratio*sum(orig_diff, na.rm=TRUE), by=zone]
     
-    ## TEST WHETHER POSSIBLE
-    diff_test <- zonal_diff[,4] / zonal_diff[,3]
-    diff_test[is.infinite(diff_test) | is.nan(diff_test)] <- 0 
-    zonal_thresholds <- data.table(zone = zonal_diff[,1], 
-                                   #threshold = abs(diff_test),
-                                   min_thrs = adjust_threshold[1],
-                                   max_thrs = adjust_threshold[2],
-                                   key="zone")
     
-    if(is.null(adjust_threshold)) adjust_threshold <- 0.5
     
-    test <- any(abs(diff_test) > 1)
+    
+    ## TEST WHETHER REALLOCATION IS POSSIBLE
+    test <- any(abs(zonal_diff$ratio) > 1)
     if(test) stop("adjusting for difference not possible with these zones.")
-    diff_test <- any(abs(diff_test) > adjust_threshold)
+    diff_test <- any(abs(zonal_diff$ratio) > adjust_threshold)
     
     
-    
-    # pycnophylactic interpolation
-    if(verbose) message("Pycnophylactic interpolation of errors..")
-    rzd <- raster::reclassify(zones, zonal_diff[,c(1,4)])
+    rzd <- zones
+    values(rzd) <- adj$rzd
     rzd_i <- as.matrix(rzd)
     ncol <- ncol(rzd)
     nrow <- nrow(rzd)
-    # boundary condition
+    
+    # set up boundary condition surrounding the raster
     rleft <- rzd_i[,1]
     rright <- rzd_i[,ncol]
     rtop <- c(NA, rzd_i[1,], NA)
@@ -136,58 +134,48 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     ## construct a matrix which is used to fix values outside zones,
     ## and to keep r2 <= 0 at 0
     nochange <- rep(NA, length(smooth_r2))
-    below_zero <- smooth_r2 <= 0 
+    negative <- smooth_r2 < 0 
+    # cells which are outside of zones and have values
     inds <- which(!zs & !is.na(smooth_r2))
     if(length(inds) != 0) nochange[inds] <- smooth_r2[inds]
+    # which are zero or negative
     nochange[below_zero] <- 0
-    negative <- smooth_r2 < 0 
+    
     nc_inds <- !is.na(nochange)
+    nc_inds <- matrix(nc_inds, nrow, ncol, byrow=TRUE)
+    below_zero <- matrix(below_zero, nrow, ncol, byrow=TRUE)
     
-    
-    adj <- data.table::data.table(pixel = 1:raster::ncell(zones),
-                                  zone = zs,
-                                  areas = areas,
-                                  r1 = raster::values(r1)*areas,
-                                  smooth_r2 = smooth_r2,
-                                  negative = negative,
-                                  orig_err_mean = raster::values(rzd),
-                                  key = c("pixel", "zone", "smooth_r2"))
-    adj <- zonal_thresholds[adj, on="zone"]
-    adj[, error := ifelse(is.na(r1),
-                          smooth_r2,
-                          smooth_r2-r1)]
-    adj[, ':='(err_ratio = error/orig_err_mean,
-               max_err = abs(smooth_r2 * max_thrs*!negative),
-               min_err = -abs(smooth_r2 * min_thrs*!negative))]
-    
+    adj[, ':='(negative = negative)]
+    adj[, max_err := abs(smooth_r2 * threshold*!negative)]
     
     
     ## TEST WHETHER POSSIBLE errors
-    tst <- adj[, .(max_err = round(sum(max_err, na.rm=TRUE),2),
-                   min_err = round(sum(min_err, na.rm=TRUE),2),
-                   err = round(sum(orig_err_mean, na.rm=TRUE),2)), 
+    tst <- adj[, .(max_err = abs(round(sum(max_err, na.rm=TRUE),2)),
+                   err = round(sum(orig_diff, na.rm=TRUE),2)), 
                by=zone]
     tst[, ':='(max_ratio = round(err/max_err,2),
-               max_test = ifelse(err >= 0,
-                                 round(abs(tst$err),5) > round(tst$max_err,5),
-                                 NA),
-               min_ratio = round(err/min_err,2),
-               min_test = ifelse(err < 0,
-                                 round(abs(tst$err),5) < round(tst$min_err,5),
-                                 NA))]
-    test <- any(tst$test[-1])
+               max_test = round(abs(tst$err),5) > round(tst$max_err,5))]
+    test <- any(tst$max_test[-1])
     #test <- FALSE
-    if(test) stop("cannot reallocate error with current threshold. Please increase.")
+    # if(test) stop("cannot reallocate error with current threshold. Please increase.")
+    if(test) {
+        warning(paste0("WARNING: cannot reallocate error with current ", 
+                        "threshold. Returning the error table."))
+        return(tst)
+    }
     if(!test && diff_test) warning(paste0("threshold smaller than difference ",
                                           "between r1 and r2. adjustment may ",
                                           "be unstable."))
     
     # ITERATE n TIMES
-    pb <- utils::txtProgressBar(min = 0, max = n, style=3) 
-    for(i in 1:n) {
+    if(verbose) message("Pycnophylactic interpolation of errors..")
+    pb <- utils::txtProgressBar(min = 0, max = nmax, style=3) 
+    n <- 1
+    while(n <= nmax) {
+    #for(i in 1:n) {
         
         # add boundary condition
-        rzd_i[nc_inds] <- nochange[nc_inds]
+        rzd_i[below_zero] <- 0
         rzd_i <- cbind(rleft, rzd_i, rright)
         rzd_i <- rbind(rtop, rzd_i, rbottom)
         
@@ -199,20 +187,18 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                                pad=TRUE, 
                                na.rm=TRUE)
         rzd_i <- as.matrix(rzd_i)[c(-1,-(nrow+1)), c(-1,-(ncol+1))]
-        rzd_i[nc_inds] <- nochange[nc_inds]
+        rzd_i[below_zero] <- 0
         
         adj <- adj[order(pixel)]
         adj[,smooth_mean := as.vector(t(rzd_i))]
-        adj[, mean_sm := mean(smooth_mean, na.rm=TRUE), by = zone]
-        adj[, adjust := ifelse(orig_err_mean == 0,
+        adj[, mean_sm := ifelse(is.na(smooth_mean),
+                                NA,
+                                mean(smooth_mean, na.rm=TRUE)), by = zone]
+        adj[, adjust := ifelse(orig_diff == 0,
                                1,
-                               (mean_sm)/(orig_err_mean))]
+                               (mean_sm)/(orig_diff))]
         adj[, new_err := smooth_mean/adjust]
-        #adj[, ratio := (smooth_mean/mean_sm)]
-        #adj[, new_err := adjust/ratio]
-        adj[, high_err := ifelse(new_err >= 0,
-                                 new_err > max_err,
-                                 new_err < min_err)]
+        adj[, high_err := abs(new_err) > max_err]
         
         iterr <- adj$new_err
         if(any(adj$high_err)) {
@@ -227,13 +213,9 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                 } 
                 
                 max_err <- adj[zone == z, max_err]
-                min_err <- adj[zone == z, min_err]
                 new_err <- adj[zone == z, new_err]
-                r2val <- adj[zone == z, smooth_r2]
-                orig_error <- adj[zone == z, error]
                 fixed_err <- rep(NA, length(new_err))
-                shares <- orig_error / sum(abs(orig_error)) 
-                shares2 <- max_err / sum(abs(max_err))
+                shares <- max_err / sum(abs(max_err))
                 share_left <- sum(shares)
                 shares_visited <- 0
                 total_err <- 0
@@ -242,12 +224,7 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                     share_of_err <- shares[j] / (1-shares_visited)
                     sherr <- total_err*share_of_err
                     pos <- new_err[j] >= 0
-                    if(pos) {
-                        test <- abs(new_err[j]+sherr) > abs(max_err[j])
-                    } else {
-                        
-                    }
-                    
+                    test <- abs(new_err[j]+sherr) > abs(max_err[j])
                     if(is.na(test)) next
                     if(test) {
                         
@@ -276,6 +253,16 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
             }
             adj <- adj[order(pixel)]
             iterr <- adj$fixed_err
+            test <- adj[, .(sum_fix = sum(fixed_err, na.rm=TRUE),
+                            sum_orig = sum(rzd, na.rm=TRUE)), by=zone]
+            test[, test := round(sum_fix, 5) == round(sum_orig, 5)]
+            n_test <- sum(test$test, na.rm=TRUE)
+            sum_fix <- sum(test$sum_fid, na.rm=TRUE)
+            sum_orig <- sum(test$sum_orig, na.rm=TRUE)
+            rat <- round(sum_fix/sum_orig, 15)
+            print(paste0("iter ", n, " -- ", n_test, "/", nrow(test), " OK! ",
+                         "Ratio estimate vs original is ", rat))
+            if(n_test == nrow(test)) break
         }
         rzd_i <- matrix(iterr, nrow=nrow, ncol=ncol,
                         byrow=TRUE)
@@ -298,11 +285,45 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
 } 
 
 
-# 
-# zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
-# zm_runoff_smooth <- raster::zonal(sm_out*area(w_rs), zones1)
-# all.equal(zm_runoff, zm_runoff_smooth)
-# cbind(zm_runoff, zm_runoff_smooth)
-# any(values(temp) < 0, na.rm=TRUE)
-# t <- values(temp)
-# table(t < 0)
+
+system.time({
+    test <- pycnophylactic_adjustment_dev(w_rs, wsm_rs, zones1, 
+                                      adjust_threshold = 0.5, n=50, 
+                                      return_error = TRUE, verbose=TRUE)
+})
+
+zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
+zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones1)
+all.equal(zm_runoff, zm_runoff_smooth)
+
+any(values(test[[1]]) < 0, na.rm=TRUE)
+t <- values(test[[1]])
+table(t < 0)
+writeRaster(test, "testnew_50_abs_err.tif")
+
+dt <- as.data.table(zm_runoff)
+dt[, sm_mean := zm_runoff_smooth[,2]]
+dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
+dt[, ratio := sm_mean/mean][]
+#tempdt <- dt
+
+
+system.time({
+    test <- pycnophylactic_adjustment(w_rs, wsm_rs, zones3, 
+                                          adjust_threshold = 1, n=5, 
+                                          return_error = TRUE, verbose=TRUE)
+})
+
+zm_runoff <- raster::zonal(w_rs*area(w_rs), zones1)
+zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones1)
+all.equal(zm_runoff, zm_runoff_smooth)
+
+any(values(test[[1]]) < 0, na.rm=TRUE)
+t <- values(test[[1]])
+table(t < 0)
+writeRaster(test, "testnew_50_abs_err.tif")
+
+dt <- as.data.table(zm_runoff)
+dt[, sm_mean := zm_runoff_smooth[,2]]
+dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
+dt[, ratio := sm_mean/mean][]
