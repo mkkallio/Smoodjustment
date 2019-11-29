@@ -31,9 +31,9 @@
 #'   the layer used for the correction.
 #'   
 #' @export
-pycnophylactic_adjustment_dev <- function(r1, r2, 
+pycnophylactic_adjustment2 <- function(r1, r2, 
                                       zones, 
-                                      adjust_threshold = c(-0.5,0.75),
+                                      #adjust_threshold = c(-0.5,0.75),
                                       n=5, 
                                       smoothing_matrix = matrix(1,3,3),
                                       intensive = TRUE,
@@ -97,32 +97,31 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     zonal_diff[, ratio := orig_diff/sm_mean]
     zonal_diff[is.na(ratio) | is.nan(ratio) | is.infinite(ratio), ratio := 1]
     #threshold <-  abs(zonal_diff$ratio)
-    zonal_diff[, threshold := abs(ratio)*1.5 ]
-    
-    ##################
-    # prepare pycnophylactic interpolation
-    adj <- adj[zonal_diff, on=.(zone), ':='(orig_diff = i.orig_diff,
-                                         threshold = i.threshold,
-                                         r_ratio = i.ratio)]
-    
-    adj[, error := ifelse(is.na(orig_r1),
-                          smooth_r2,
-                          smooth_r2-orig_r1)]
-    adj[, error_ratio := error/sum(error, na.rm=TRUE), by=zone]
-    adj[, error_ratio2 := abs(error)/sum(abs(error), na.rm=TRUE), by=zone]
-    
-    adj[, rzd2 := error_ratio*sum(orig_diff, na.rm=TRUE), by=zone]
-    adj[, rzd := error_ratio2*sum(orig_diff, na.rm=TRUE), by=zone]
-    
-    
-    
+    zonal_diff[, threshold := abs(ratio)*1.25 ]
     
     ## TEST WHETHER REALLOCATION IS POSSIBLE
     test <- any(abs(zonal_diff$ratio) > 1)
     if(test) stop("adjusting for difference not possible with these zones.")
-    diff_test <- any(abs(zonal_diff$ratio) > adjust_threshold)
+    #diff_test <- any(abs(zonal_diff$ratio) > adjust_threshold)
     
     
+    
+    
+    ##################
+    # PREPARE FOR PYCNOPHYLACTIC INTERPOLATION
+    adj <- adj[zonal_diff, on=.(zone), ':='(orig_diff = i.orig_diff,
+                                         threshold = i.threshold,
+                                         r_ratio = i.ratio)]
+    adj[, error := ifelse(is.na(orig_r1),
+                          smooth_r2,
+                          smooth_r2-orig_r1)]
+    adj[, error_ratio := abs(error)/sum(abs(error), na.rm=TRUE), by=zone]
+    
+    ## rather than divide the error equally, do some initial distribution
+    ## based on the error
+    adj[, rzd := error_ratio*sum(orig_diff, na.rm=TRUE), by=zone]
+
+    ### 
     rzd <- zones
     values(rzd) <- adj$rzd
     rzd_i <- as.matrix(rzd)
@@ -144,16 +143,19 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
     if(length(inds) != 0) nochange[inds] <- smooth_r2[inds]
     # which are zero or negative
     nochange[below_zero] <- 0
-    
     nc_inds <- !is.na(nochange)
     nc_inds <- matrix(nc_inds, nrow, ncol, byrow=TRUE)
     below_zero <- matrix(below_zero, nrow, ncol, byrow=TRUE)
     
+    
+    #####
+    # MAXIMUM ERROR
     adj[, ':='(negative = negative)]
     adj[, max_err := abs(smooth_r2 * threshold*!negative)]
     
     
-    ## TEST WHETHER POSSIBLE errors
+    #####
+    ## TEST MAXIMUM ERROR
     tst <- adj[, .(max_err = abs(round(sum(max_err, na.rm=TRUE),2)),
                    err = round(sum(orig_diff, na.rm=TRUE),2)), 
                by=zone]
@@ -167,17 +169,19 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                         "threshold. Returning the error table."))
         return(tst)
     }
-    if(!test && diff_test) warning(paste0("threshold smaller than difference ",
-                                          "between r1 and r2. adjustment may ",
-                                          "be unstable."))
+    # if(!test && diff_test) warning(paste0("threshold smaller than difference ",
+    #                                       "between r1 and r2. adjustment may ",
+    #                                       "be unstable."))
     
+    
+    ##################
     # ITERATE n TIMES
     if(verbose) message("Pycnophylactic interpolation of errors..")
-    pb <- utils::txtProgressBar(min = 0, max = nmax, style=3) 
-    n <- 1
-    keep_iter <- TRUE
-    while(keep_iter & n <= nmax ) {
-    #for(i in 1:n) {
+    pb <- utils::txtProgressBar(min = 0, max = n, style=3) 
+    #n <- 1
+    #keep_iter <- TRUE
+    #while(keep_iter & n <= nmax ) {
+    for(i in 1:n) {
         
         # add boundary condition
         rzd_i[below_zero] <- 0
@@ -275,14 +279,8 @@ pycnophylactic_adjustment_dev <- function(r1, r2,
                             sum_orig = sum(rzd, na.rm=TRUE)), by=zone]
             test[, test := round(sum_fix, 5) == round(sum_orig, 5)]
             n_test <- sum(test$test, na.rm=TRUE)
-            sum_fix <- sum(test$sum_fid, na.rm=TRUE)
-            sum_orig <- sum(test$sum_orig, na.rm=TRUE)
-            rat <- round(sum_fix/sum_orig, 15)
-            print(paste0("iter ", n, " -- ", n_test, "/", nrow(test), " OK! ",
-                         "Ratio estimate vs original is ", rat))
-           
         }
-        n <- n+1
+        #n <- n+1
         if(n_test == nrow(test)) break
         rzd_i <- matrix(iterr, nrow=nrow, ncol=ncol,
                         byrow=TRUE)
