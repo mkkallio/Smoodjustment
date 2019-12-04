@@ -1,14 +1,15 @@
 Package: Smoodjustment
 Type: Package
 Title: Adjust a smoothed raster so that its volume matches original unsmoothed
-  raster
+  raster.
 Version: 0.0.9999
 Author: c(person("Marko", "Kallio", email = "marko@markokallio.fi", 
                   role = c("aut", "cre"), 
                   comment = c(ORCID = "0000-0002-6917-7790"))
 Maintainer: Marko Kallio <marko@markokallio.fi>
-Description: Adjust a smoothed raster so that its volume matches original unsmoothed
-  raster.
+Description: Adjust a smoothed raster so that its volume matches original 
+  unsmoothed raster. Smoodjustment does this by smoothing the difference in 
+  rasters by Tobler's pycnophylactic interpolation.
 Imports:
   raster,
   data.table

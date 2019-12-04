@@ -9,7 +9,8 @@ pycnophylactic_adjustment(r1, r2, zones, adjust_threshold = 0.5, n = 5,
   return_error = FALSE, verbose = FALSE)
 }
 \arguments{
-\item{r1}{unsmoothed \code{RasterLayer}, from which we get zonal mass}
+\item{r1}{unsmoothed \code{RasterLayer}, from which target zonal mass is
+extracted.}
 
 \item{r2}{smoothed \code{RasterLayer}, which' zonal mass we adjust}
 
@@ -34,18 +35,18 @@ layer in addition to the adjusted.}
 }
 \value{
 Volume corrected r2 as single \code{RasterLayer}, or , if 
-  \code{return_error == TRUE}, a two-layer raster with corrected r2 and 
-  the layer used for the correction.
+  \code{return_error == TRUE}, a four-layer raster with corrected r2, 
+  uncorrected r2, r1, and the adjustment raster.
 }
 \description{
 The function adjusts a smoothed raster based on the difference in means 
 between the original raster and the smoothed raster). Pycnophylactic 
 interpolation (PP) is applied to the difference, resulting in a smooth 
-surface where of the errors, but where the mean error within the zone 
+surface, but where the mean difference within the zone 
 equals the original mean error. The smoothed input raster is then adjusted 
 with the new surface. In practice, smoothing this way is a combination of 
-the two surfaces: the original smoothed raster, and the smoothed error 
-obtained from PP. The function sets all negative values in the 
-smoothed raster as 0 The function also keeps cells with value 0 as 0, and 
+the two surfaces: the original smoothed raster, and the smoothed difference
+obtained with PP. The function sets all negative values in the 
+smoothed raster as 0. The function also keeps cells with value 0 as 0, and 
 therefore any negative value are set to zero and kept as such.
 }
