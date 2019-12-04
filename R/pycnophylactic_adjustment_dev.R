@@ -319,25 +319,25 @@ pycnophylactic_adjustment2 <- function(r1, r2,
 # 
 # 
 # 
-# system.time({
-#     test <- pycnophylactic_adjustment_dev(w_rs, wsm_rs, zones, 
-#                                       adjust_threshold = 0.5, n=5, 
-#                                       return_error = TRUE, verbose=TRUE)
-# })
-# 
-# zm_runoff <- raster::zonal(w_rs*area(w_rs), zones)
-# zm_runoff_smooth <- raster::zonal(test[[1]]*area(w_rs), zones)
-# all.equal(zm_runoff, zm_runoff_smooth)
-# 
-# any(values(test[[1]]) < 0, na.rm=TRUE)
-# t <- values(test[[1]])
-# table(t < 0)
-# #writeRaster(test, "testnew_50_abs_err.tif")
-# 
-# dt <- as.data.table(zm_runoff)
-# dt[, sm_mean := zm_runoff_smooth[,2]]
-# dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
-# dt[, ratio := sm_mean/mean][]
+system.time({
+    test2 <- pycnophylactic_adjustment2(w_rs, wsm_rs, zones,
+                                       n=5,
+                                      return_error = TRUE, verbose=TRUE)
+})
+
+zm_runoff <- raster::zonal(w_rs*area(w_rs), zones)
+zm_runoff_smooth <- raster::zonal(test2[[1]]*area(w_rs), zones)
+all.equal(zm_runoff, zm_runoff_smooth)
+
+any(values(test[[1]]) < 0, na.rm=TRUE)
+t <- values(test[[1]])
+table(t < 0)
+#writeRaster(test, "testnew_50_abs_err.tif")
+
+dt <- as.data.table(zm_runoff)
+dt[, sm_mean := zm_runoff_smooth[,2]]
+dt[, test_equal := round(mean, 10) == round(sm_mean,10)]
+dt[, ratio := sm_mean/mean][]
 # #tempdt <- dt
 # 
 # 
