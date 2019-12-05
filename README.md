@@ -1,6 +1,9 @@
 Smoodjustment 0.0.9999
 ================
-M
+
+[![DOI](https://zenodo.org/badge/223933979.svg)](https://zenodo.org/badge/latestdoi/223933979)
+
+
 Smoothing a raster layer results in a change in zonal counts over. For some applications, this is not desirable. Smoodjustment adjusts a smoothed raster so that, within specified zones the mass of the original unsmoothed raster is preserved.
 
 In the most simple case, the adjustment can be made by increasing and lowering the values within a zone so that the two rasters' zonal mass match. However, this results in potential steps at the zone boundaries - a feature that smoothing is often used to eliminate. Smoodjustment smooths the adjustment layer using Tobler's pycnophylactic interpolation to create a smooth adjustment layer.
