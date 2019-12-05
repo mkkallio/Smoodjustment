@@ -1,11 +1,4 @@
----
-title: "Smoodjustment 0.0.9999"
-author: "Marko Kallio"
-date: "5 December 2019"
-output:
-      html_document:
-        keep_md: true
----
+# Smoodjustment 0.0.9999
 
 Smoothing a raster layer results in a change in zonal counts over. For some applications, this is not desirable. Smoodjustment adjusts a smoothed raster so that, within specified zones the mass of the original unsmoothed raster is preserved. 
 
