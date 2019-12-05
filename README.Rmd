@@ -2,9 +2,7 @@
 title: "Smoodjustment 0.0.9999"
 author: "Marko Kallio"
 date: "5 December 2019"
-output:
-      html_document:
-        keep_md: true
+output: github_document
 ---
 
 Smoothing a raster layer results in a change in zonal counts over. For some applications, this is not desirable. Smoodjustment adjusts a smoothed raster so that, within specified zones the mass of the original unsmoothed raster is preserved. 
@@ -16,12 +14,9 @@ In the most simple case, the adjustment can be made by increasing and lowering t
 
 ```{r libs, include=FALSE}
 library(Smoodjustment)
-library(dplyr)
 library(raster)
 library(rasterVis)
 library(gstat) # to create two artificial layers
-library(knitr)
-library(kableExtra) # nice html tables
 ```
 
 ### Create some rasters 
@@ -76,9 +71,7 @@ differences <- cbind(original,
                      difference = original[,2]-adj_smooth[,2])
 colnames(differences)[2] <- "original"
 
-differences  %>%
-    kable() %>%
-    kable_styling()
+differences
 
 ```
 
