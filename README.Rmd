@@ -1,0 +1,85 @@
+---
+title: "Smoodjustment 0.0.9999"
+author: "Marko Kallio"
+date: "5 December 2019"
+output:
+      html_document:
+        keep_md: true
+---
+
+Smoothing a raster layer results in a change in zonal counts over. For some applications, this is not desirable. Smoodjustment adjusts a smoothed raster so that, within specified zones the mass of the original unsmoothed raster is preserved. 
+
+In the most simple case, the adjustment can be made by increasing and lowering the values within a zone so that the two rasters' zonal mass match. However, this results in potential steps at the zone boundaries - a feature that smoothing is often used to eliminate. Smoodjustment smooths the adjustment layer using Tobler's pycnophylactic interpolation to create a smooth adjustment layer.
+
+**Note: this is a very early version of the package designed for a specific purpose. Unexpected errors may occur with other uses.**
+
+
+```{r libs, include=FALSE}
+library(Smoodjustment)
+library(dplyr)
+library(raster)
+library(rasterVis)
+library(gstat) # to create two artificial layers
+library(knitr)
+library(kableExtra) # nice html tables
+```
+
+### Create some rasters 
+We create a random raster to be smoothed and adjusted
+
+```{r}
+set.seed(5122019)
+side <- 100 # size of one side
+points <- data.frame(x = rep(1:side, each = side),
+                     y = rep(1:side, times = side))
+variogram <- vgm(psill=1, range=50, model='Exp')
+spatial_model <- gstat(formula=z~1, locations=~x+y, dummy=T, beta=1, model=variogram, nmax=20)
+prediction <- predict(spatial_model, newdata=points, nsim=1)
+gridded(prediction) = ~x+y
+r <- raster(prediction) +5
+crs(r) <- "+proj=eqc +lat_ts=0 +lat_0=0 +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+levelplot(r)
+
+```
+And lets create some zones
+
+```{r}
+zones <- aggregate(r, 20)
+raster::values(zones) <- 1:ncell(zones)
+zones <- disaggregate(zones, 20)
+levelplot(zones)
+
+```
+
+### smooth raster and adjust
+```{r}
+r_smooth <- focal(r, w = matrix(1,9,9), fun='mean', pad=TRUE, na.rm=TRUE)
+levelplot(r_smooth)
+```
+```{r}
+adjusted <- pycnophylactic_adjustment(r, r_smooth, zones, adjust_threshold = 0.5, n =50, intensive=FALSE, return_error = TRUE, verbose=FALSE)
+levelplot(adjusted)
+levelplot(adjusted$Adjustment.raster)
+```
+
+### Check that the masses hold
+```{r}
+original <- raster::zonal(r, zones)
+adj_smooth <- raster::zonal(adjusted$Adjusted.r2, zones)
+all.equal(original, adj_smooth)
+```
+
+```{r}
+
+differences <- cbind(original, 
+                     adj_smooth = adj_smooth[,2],
+                     difference = original[,2]-adj_smooth[,2])
+colnames(differences)[2] <- "original"
+
+differences  %>%
+    kable() %>%
+    kable_styling()
+
+```
+
+

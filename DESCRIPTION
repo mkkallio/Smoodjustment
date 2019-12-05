@@ -1,7 +1,7 @@
 Package: Smoodjustment
 Type: Package
 Title: Adjust a smoothed raster so that its volume matches original unsmoothed
-  raster.
+  raster
 Version: 0.0.9999
 Author: c(person("Marko", "Kallio", email = "marko@markokallio.fi", 
                   role = c("aut", "cre"), 

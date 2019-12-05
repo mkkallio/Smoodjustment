@@ -51,7 +51,7 @@ pycnophylactic_adjustment <- function(r1, r2,
     mean_sm <- NULL
     adjust <- NULL
     high_err <- NULL
-    
+    # if(is.null(adjust_threshold)) adjust_threshold <- 0.5
     
     if(verbose) message("Preparing..")
     
@@ -75,8 +75,7 @@ pycnophylactic_adjustment <- function(r1, r2,
                                    #threshold = abs(diff_test),
                                    threshold = adjust_threshold,
                                    key="zone")
-    
-    if(is.null(adjust_threshold)) adjust_threshold <- 0.5
+
     
     test <- any(abs(diff_test) > 1)
     if(test) stop("adjusting for difference not possible with these zones.")
@@ -86,7 +85,7 @@ pycnophylactic_adjustment <- function(r1, r2,
     
     # pycnophylactic interpolation
     if(verbose) message("Pycnophylactic interpolation of errors..")
-    rzd_i <- as.matrix(rzd)
+    rzd_i <- raster::as.matrix(rzd)
     ncol <- ncol(rzd)
     nrow <- nrow(rzd)
     # boundary condition
@@ -145,7 +144,7 @@ pycnophylactic_adjustment <- function(r1, r2,
                                           "be unstable."))
     
     # ITERATE n TIMES
-    pb <- utils::txtProgressBar(min = 0, max = n, style=3) 
+    if(verbose) pb <- utils::txtProgressBar(min = 0, max = n, style=3) 
     for(i in 1:n) {
         
         # add boundary condition
@@ -160,7 +159,7 @@ pycnophylactic_adjustment <- function(r1, r2,
                                fun=mean, 
                                pad=TRUE, 
                                na.rm=TRUE)
-        rzd_i <- as.matrix(rzd_i)[c(-1,-(nrow+1)), c(-1,-(ncol+1))]
+        rzd_i <- raster::as.matrix(rzd_i)[c(-1,-(nrow+1)), c(-1,-(ncol+1))]
         rzd_i[nc_inds] <- nochange[nc_inds]
         
         adj <- adj[order(pixel)]
@@ -173,7 +172,7 @@ pycnophylactic_adjustment <- function(r1, r2,
         adj[, high_err := abs(new_err) > abs(max_err)]
         
         iterr <- adj$new_err
-        if(any(adj$high_err)) {
+        if(any(adj$high_err, na.rm=TRUE)) {
             
             uniq_zone <- unique(adj$zone)
             output <- list()
